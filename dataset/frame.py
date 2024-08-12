@@ -431,6 +431,10 @@ class FrameReaderVideo:
                 frame_path = os.path.join(
                     self._frame_dir, video_name, 'frame' + str(frame_num) + '.jpg'
                 )
+
+                
+            elif 'kovo' in self._dataset:
+                frame_path = os.path.join(self._frame_dir, video_name, f'{frame_num:06d}.jpg')
             
             try:
                 img = self.read_frame(frame_path)
