@@ -247,6 +247,13 @@ class FrameReader:
                 frame_path = os.path.join(self._frame_dir, video_name, 'frame' + str(frame) + '.jpg')
                 base_path = os.path.join(self._frame_dir, video_name)
                 ndigits = -1
+            
+            elif 'kovo' in self.dataset:
+                frame = frame_num
+                frame_path = os.path.join(self._frame_dir, video_name, f'{frame:06d}.jpg')
+                base_path = os.path.join(self._frame_dir, video_name)
+                ndigits = 6
+
                 
             exist_frame = os.path.exists(frame_path)
             if exist_frame & (found_start == -1):

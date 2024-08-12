@@ -31,7 +31,7 @@ class TDEEDModel(BaseRGBModel):
             in_channels = {'rgb': 3}[self._modality]
             self._d = 512 # initialized to 512
             self._temp_arch = args.temporal_arch
-            assert self._temp_arch == 'ed_sgp_mixer', 'Only ed_sgp_mixer supported for now'
+            # assert self._temp_arch == 'ed_sgp_mixer', 'Only ed_sgp_mixer supported for now'
             self._radi_displacement = args.radi_displacement
             self._feature_arch = args.feature_arch
             assert 'rny' in self._feature_arch, 'Only rny supported for now'
@@ -68,6 +68,33 @@ class TDEEDModel(BaseRGBModel):
             
             if self._temp_arch == 'ed_sgp_mixer':
                 self._temp_fine = EDSGPMIXERLayers(feat_dim, args.clip_len, num_layers=args.n_layers, ks = args.sgp_ks, k = args.sgp_r, concat = True)
+                self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
+            elif self._temp_arch == 'transformer_enc_only_base_11m': 
+                from x_transformers import Encoder                
+
+                self._temp_fine = Encoder(
+                    dim = self._feat_dim,
+                    depth = 5,
+                    heads = 8,
+                    attn_flash = True,
+                    layer_dropout = 0.1,   # stochastic depth - dropout entire layer
+                    attn_dropout = 0.1,    # dropout post-attention
+                    ff_dropout = 0.1       # feedforward dropout
+                )
+                
+                self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
+
+            elif self._temp_arch == 'mamba_1':
+                from mamba_ssm import Mamba
+                
+                self._temp_fine = Mamba(
+                    # This module uses roughly 3 * expand * d_model^2 parameters
+                    d_model=self._feat_dim, # Model dimension d_model
+                    d_state=16,  # SSM state expansion factor
+                    d_conv=4,    # Local convolution width
+                    expand=2,    # Block expansion factor
+                ).to("cuda")
+
                 self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
             else:
                 raise NotImplementedError(self._temp_arch)
@@ -136,17 +163,25 @@ class TDEEDModel(BaseRGBModel):
 
             im_feat = im_feat + self.temp_enc.expand(batch_size, -1, -1)
 
-            if self._temp_arch == 'ed_sgp_mixer':
-                im_feat = self._temp_fine(im_feat)
-                if self._radi_displacement > 0:
-                    displ_feat = self._pred_displ(im_feat).squeeze(-1)
-                    im_feat = self._pred_fine(im_feat)
-                    return {'im_feat': im_feat, 'displ_feat': displ_feat}, y
+            im_feat = self._temp_fine(im_feat)
+            if self._radi_displacement > 0:
+                displ_feat = self._pred_displ(im_feat).squeeze(-1)
                 im_feat = self._pred_fine(im_feat)
-                return im_feat, y
+                return {'im_feat': im_feat, 'displ_feat': displ_feat}, y
+            im_feat = self._pred_fine(im_feat)
+            return im_feat, y
+        
+            # if self._temp_arch == 'ed_sgp_mixer':
+            #     im_feat = self._temp_fine(im_feat)
+            #     if self._radi_displacement > 0:
+            #         displ_feat = self._pred_displ(im_feat).squeeze(-1)
+            #         im_feat = self._pred_fine(im_feat)
+            #         return {'im_feat': im_feat, 'displ_feat': displ_feat}, y
+            #     im_feat = self._pred_fine(im_feat)
+            #     return im_feat, y
             
-            else:
-                raise NotImplementedError(self._temp_arch)
+            # else:
+            #     raise NotImplementedError(self._temp_arch)
         
         def normalize(self, x):
             return x / 255.

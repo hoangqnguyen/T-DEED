@@ -1,0 +1,10 @@
+__pycache__
+.vscode
+work_dir
+data/kovo*
+kovo_train
+.ipynb_checkpoints
+exp/*
+train_schedule*.sh
+checkpoints
+logs/*
