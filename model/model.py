@@ -74,15 +74,23 @@ class TDEEDModel(BaseRGBModel):
                 from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
                 self.temp_enc = Summer(PositionalEncoding1D(self._feat_dim))
-                self._temp_fine = Encoder(
-                    dim = self._feat_dim,
-                    depth = 5,
-                    heads = 8,
-                    attn_flash = True,
-                    layer_dropout = 0.1,   # stochastic depth - dropout entire layer
-                    attn_dropout = 0.1,    # dropout post-attention
-                    ff_dropout = 0.1       # feedforward dropout
-                )
+                encoder_layer = nn.TransformerEncoderLayer(self._feat_dim, nhead=8)
+                self._temp_fine = nn.TransformerEncoder(encoder_layer, num_layers=5)
+                # self._temp_fine = Encoder(
+                #     dim = self._feat_dim,
+                #     depth = 5,
+                #     heads = 8,
+                #     attn_flash = True,
+                # )
+
+            elif self._temp_arch == 'transformer_dec_only_base_11m': 
+                from x_transformers import Encoder                
+                from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
+
+                self.temp_enc = Summer(PositionalEncoding1D(self._feat_dim))
+                decoder_layer = nn.TransformerDecoderLayer(self._feat_dim, nhead=8)
+                self._temp_fine = nn.TransformerDecoder(decoder_layer, num_layers=5)
+                self._temp_queries = nn.Parameter(torch.rand(1, 1, self._feat_dim))
 
             elif self._temp_arch == 'mamba_1':
                 from mamba_ssm import Mamba
@@ -168,8 +176,12 @@ class TDEEDModel(BaseRGBModel):
                 im_feat = im_feat + self.temp_enc.expand(batch_size, -1, -1)
             else:
                 im_feat = self.temp_enc(im_feat)
-
-            im_feat = self._temp_fine(im_feat)
+            
+            if '_dec_' in self._temp_arch:
+                im_feat = self._temp_fine(self._temp_queries.expand(batch_size, true_clip_len, -1), im_feat)
+            else:
+                im_feat = self._temp_fine(im_feat)
+                
             if self._radi_displacement > 0:
                 displ_feat = self._pred_displ(im_feat).squeeze(-1)
                 im_feat = self._pred_fine(im_feat)
