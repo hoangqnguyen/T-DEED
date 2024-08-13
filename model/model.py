@@ -64,14 +64,16 @@ class TDEEDModel(BaseRGBModel):
             feat_dim = self._d
 
             #Positional encoding
-            self.temp_enc = nn.Parameter(torch.normal(mean = 0, std = 1 / args.clip_len, size = (args.clip_len, self._d)))
             
             if self._temp_arch == 'ed_sgp_mixer':
+                self.temp_enc = nn.Parameter(torch.normal(mean = 0, std = 1 / args.clip_len, size = (args.clip_len, self._d)))
                 self._temp_fine = EDSGPMIXERLayers(feat_dim, args.clip_len, num_layers=args.n_layers, ks = args.sgp_ks, k = args.sgp_r, concat = True)
-                self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
+
             elif self._temp_arch == 'transformer_enc_only_base_11m': 
                 from x_transformers import Encoder                
+                from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
+                self.temp_enc = Summer(PositionalEncoding1D(self._feat_dim))
                 self._temp_fine = Encoder(
                     dim = self._feat_dim,
                     depth = 5,
@@ -81,11 +83,11 @@ class TDEEDModel(BaseRGBModel):
                     attn_dropout = 0.1,    # dropout post-attention
                     ff_dropout = 0.1       # feedforward dropout
                 )
-                
-                self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
 
             elif self._temp_arch == 'mamba_1':
                 from mamba_ssm import Mamba
+                
+                self.temp_enc = nn.Identity()
                 
                 self._temp_fine = Mamba(
                     # This module uses roughly 3 * expand * d_model^2 parameters
@@ -95,9 +97,10 @@ class TDEEDModel(BaseRGBModel):
                     expand=2,    # Block expansion factor
                 ).to("cuda")
 
-                self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
             else:
                 raise NotImplementedError(self._temp_arch)
+            
+            self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
             
             if self._radi_displacement > 0:
                 self._pred_displ = FCLayers(self._feat_dim, 1)
@@ -161,7 +164,10 @@ class TDEEDModel(BaseRGBModel):
                 x.view(-1, channels, height, width)
             ).reshape(batch_size, clip_len, self._d)
 
-            im_feat = im_feat + self.temp_enc.expand(batch_size, -1, -1)
+            if self._temp_arch == 'ed_sgp_mixer':
+                im_feat = im_feat + self.temp_enc.expand(batch_size, -1, -1)
+            else:
+                im_feat = self.temp_enc(im_feat)
 
             im_feat = self._temp_fine(im_feat)
             if self._radi_displacement > 0:
