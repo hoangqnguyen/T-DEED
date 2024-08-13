@@ -189,9 +189,11 @@ def main(args):
                             pretty=True)
 
                 if better:
+                    save_dir =  os.path.join(os.getcwd(), 'checkpoints', args.model.split('_')[0], args.model)
+                    os.makedirs(save_dir, exist_ok=True)
                     torch.save(
                         model.state_dict(),
-                        os.path.join(os.getcwd(), 'checkpoints', args.model.split('_')[0], args.model, 'checkpoint_best.pt'))
+                        os.path.join(save_dir, 'checkpoint_best.pt'))
 
     print('START INFERENCE')
     model.load(torch.load(os.path.join(
