@@ -74,7 +74,7 @@ class TDEEDModel(BaseRGBModel):
                 from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
                 self.temp_enc = Summer(PositionalEncoding1D(self._feat_dim))
-                encoder_layer = nn.TransformerEncoderLayer(self._feat_dim, nhead=8)
+                encoder_layer = nn.TransformerEncoderLayer(self._feat_dim, nhead=8, batch_first=True)
                 self._temp_fine = nn.TransformerEncoder(encoder_layer, num_layers=5)
                 # self._temp_fine = Encoder(
                 #     dim = self._feat_dim,
@@ -88,7 +88,7 @@ class TDEEDModel(BaseRGBModel):
                 from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
                 self.temp_enc = Summer(PositionalEncoding1D(self._feat_dim))
-                decoder_layer = nn.TransformerDecoderLayer(self._feat_dim, nhead=8)
+                decoder_layer = nn.TransformerDecoderLayer(self._feat_dim, nhead=8, batch_first=True)
                 self._temp_fine = nn.TransformerDecoder(decoder_layer, num_layers=5)
                 self._temp_queries = nn.Parameter(torch.rand(1, 1, self._feat_dim))
 
