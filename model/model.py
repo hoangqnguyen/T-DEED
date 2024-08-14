@@ -87,10 +87,14 @@ class TDEEDModel(BaseRGBModel):
                 from x_transformers import Encoder                
                 from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
-                self.temp_enc = Summer(PositionalEncoding1D(self._feat_dim))
-                decoder_layer = nn.TransformerDecoderLayer(self._feat_dim, nhead=8, batch_first=True)
+                h_dim = 256
+                self._down_projection = nn.Linear(self._feat_dim, h_dim)
+                self.temp_enc = Summer(PositionalEncoding1D(h_dim))
+                decoder_layer = nn.TransformerDecoderLayer(h_dim, nhead=8, batch_first=True)
                 self._temp_fine = nn.TransformerDecoder(decoder_layer, num_layers=5)
-                self._temp_queries = nn.Parameter(torch.rand(1, 1, self._feat_dim))
+                self._temp_queries = nn.Parameter(torch.rand(1, 1, h_dim))
+
+                self._feat_dim = h_dim
 
             elif self._temp_arch == 'mamba_1':
                 from mamba_ssm import Mamba
@@ -174,10 +178,12 @@ class TDEEDModel(BaseRGBModel):
 
             if self._temp_arch == 'ed_sgp_mixer':
                 im_feat = im_feat + self.temp_enc.expand(batch_size, -1, -1)
-            else:
+            elif '_dec_' not in self._temp_arch:
                 im_feat = self.temp_enc(im_feat)
             
             if '_dec_' in self._temp_arch:
+                im_feat = self._down_projection(im_feat)
+                im_feat = self.temp_enc(im_feat)
                 im_feat = self._temp_fine(self._temp_queries.expand(batch_size, true_clip_len, -1), im_feat)
             else:
                 im_feat = self._temp_fine(im_feat)
