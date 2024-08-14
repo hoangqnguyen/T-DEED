@@ -8,3 +8,4 @@ exp/*
 train_schedule*.sh
 checkpoints
 logs/*
+visualize.ipynb

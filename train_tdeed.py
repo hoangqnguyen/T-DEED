@@ -46,7 +46,7 @@ def update_args(args, config):
     args.store_mode = config['store_mode']
     args.batch_size = config['batch_size']
     args.clip_len = config['clip_len']
-    args.crop_dim = config['crop_dim']
+    args.crop_dim = config.get('crop_dim', None)
     args.dataset = config['dataset']
     args.radi_displacement = config['radi_displacement']
     args.epoch_num_frames = config['epoch_num_frames']
@@ -65,6 +65,7 @@ def update_args(args, config):
     args.only_test = config['only_test']
     args.criterion = config['criterion']
     args.num_workers = config['num_workers']
+    args.predict_location = config.get('predict_location', False)
 
     return args
 
@@ -167,8 +168,7 @@ def main(args):
                         better = True
             
             #Printing info epoch
-            print('[Epoch {}] Train loss: {:0.5f} Val loss: {:0.5f}'.format(
-                epoch, train_loss, val_loss))
+            print(f'[Epoch {epoch}] Train loss: ce={train_loss["ce"]:0.5f},  d={train_loss["lossD"]:0.5f},  loc={train_loss["loss_loc"]:0.5f}, total={train_loss["loss"]:0.5f} | Val loss: ce={val_loss["ce"]:0.5f},  d={val_loss["lossD"]:0.5f},  loc={val_loss["loss_loc"]:0.5f}, total={val_loss["loss"]:0.5f}')
             if (args.criterion == 'map') & (epoch >= args.start_val_epoch):
                 print('Val mAP: {:0.5f}'.format(val_mAP))
                 if better:

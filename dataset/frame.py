@@ -118,6 +118,11 @@ class ActionSpotDataset(Dataset):
                             label = self._class_dict[event['label']]
                             for i in range(max(0, label_idx - self._dilate_len), min(self._clip_len, label_idx + self._dilate_len + 1)):
                                 labels.append({'label': label, 'label_idx': i})
+                    
+                    # load positions for kovo dataset
+                    if 'kovo' in self._dataset and len(labels) > 0:
+                        xy = event['xy']
+                        labels[-1]['xy'] = xy
 
                 self._frame_paths.append(frames_paths)
                 self._labels_store.append(labels)
@@ -168,6 +173,7 @@ class ActionSpotDataset(Dataset):
 
         #Process labels
         labels = np.zeros(self._clip_len, np.int64)
+        
         for label in dict_label:
             labels[label['label_idx']] = label['label']
 
@@ -176,11 +182,22 @@ class ActionSpotDataset(Dataset):
             for label in dict_labelD:
                 labelsD[label['label_idx']] = label['displ']
 
-            return {'frame': frames, 'contains_event': int(np.sum(labels) > 0),
+            output = {'frame': frames, 'contains_event': int(np.sum(labels) > 0),
                     'label': labels, 'labelD': labelsD}
-
-        return {'frame': frames, 'contains_event': int(np.sum(labels) > 0),
+        else:
+            output = {'frame': frames, 'contains_event': int(np.sum(labels) > 0),
                 'label': labels}
+
+        if 'kovo' in self._dataset:
+            event_xys = np.zeros((self._clip_len, 2), np.float32)
+            # print(label)
+            for label in dict_label:
+                if 'xy' in label:
+                    event_xys[label['label_idx']] = label['xy']
+                
+            output['xy'] = event_xys
+
+        return output
 
     def __getitem__(self, unused):
         ret = self._get_one()

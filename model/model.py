@@ -113,6 +113,9 @@ class TDEEDModel(BaseRGBModel):
                 raise NotImplementedError(self._temp_arch)
             
             self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
+
+            if args.predict_location:
+                self._pred_loc = FCLayers(self._feat_dim, 2)
             
             if self._radi_displacement > 0:
                 self._pred_displ = FCLayers(self._feat_dim, 1)
@@ -124,7 +127,7 @@ class TDEEDModel(BaseRGBModel):
                 T.RandomApply([T.ColorJitter(brightness = (0.7, 1.2))], p = 0.25),
                 T.RandomApply([T.ColorJitter(contrast = (0.7, 1.2))], p = 0.25),
                 T.RandomApply([T.GaussianBlur(5)], p = 0.25),
-                T.RandomHorizontalFlip(),
+                torch.nn.Identity() if args.predict_location else T.RandomHorizontalFlip(),
             ])
 
             #Standarization
@@ -134,12 +137,12 @@ class TDEEDModel(BaseRGBModel):
 
             #Augmentation at test time
             self.augmentationI = T.Compose([
-                T.RandomHorizontalFlip(p = 1.0)
+                torch.nn.Identity() if args.predict_location else T.RandomHorizontalFlip(p = 1.0)
             ])
 
             #Croping in case of using it
             self.croping = args.crop_dim
-            if self.croping != None:
+            if self.croping != None and args.predict_location == False:
                 self.cropT = T.RandomCrop((self.croping, self.croping))
                 self.cropI = T.CenterCrop((self.croping, self.croping))
             else:
@@ -178,6 +181,7 @@ class TDEEDModel(BaseRGBModel):
 
             if self._temp_arch == 'ed_sgp_mixer':
                 im_feat = im_feat + self.temp_enc.expand(batch_size, -1, -1)
+
             elif '_dec_' not in self._temp_arch:
                 im_feat = self.temp_enc(im_feat)
             
@@ -187,13 +191,21 @@ class TDEEDModel(BaseRGBModel):
                 im_feat = self._temp_fine(self._temp_queries.expand(batch_size, true_clip_len, -1), im_feat)
             else:
                 im_feat = self._temp_fine(im_feat)
+
+            if hasattr(self, '_pred_loc'):
+                loc_feat = self._pred_loc(im_feat).sigmoid()
+                # loc_feat = None
+            else:
+                loc_feat = None
                 
             if self._radi_displacement > 0:
                 displ_feat = self._pred_displ(im_feat).squeeze(-1)
                 im_feat = self._pred_fine(im_feat)
-                return {'im_feat': im_feat, 'displ_feat': displ_feat}, y
+                return {'im_feat': im_feat, 'displ_feat': displ_feat, 'loc_feat': loc_feat}, y
+            
             im_feat = self._pred_fine(im_feat)
-            return im_feat, y
+
+            return {'im_feat': im_feat, 'loc_feat': loc_feat}, y
         
             # if self._temp_arch == 'ed_sgp_mixer':
             #     im_feat = self._temp_fine(im_feat)
@@ -262,11 +274,15 @@ class TDEEDModel(BaseRGBModel):
 
         epoch_loss = 0.
         epoch_lossD = 0.
+        epoch_loss_ce = 0.
+        epoch_loss_loc = 0.
+
         with torch.no_grad() if optimizer is None else nullcontext():
             for batch_idx, batch in enumerate(tqdm(loader)):
                 frame = batch['frame'].to(self.device).float()
                 label = batch['label']
                 label = label.to(self.device)
+
                 if 'labelD' in batch.keys():
                     labelD = batch['labelD'].to(self.device).float()
                 
@@ -307,7 +323,11 @@ class TDEEDModel(BaseRGBModel):
 
                     if 'labelD' in batch.keys():
                         predD = pred['displ_feat']
-                        pred = pred['im_feat']
+                    
+                    if 'loc_feat' in pred.keys():
+                        pred_loc = pred['loc_feat']
+
+                    pred = pred['im_feat']
 
                     loss = 0.
 
@@ -316,10 +336,16 @@ class TDEEDModel(BaseRGBModel):
 
                     for i in range(pred.shape[0]):
                         predictions = pred[i].reshape(-1, self._num_classes)
-
-                        loss += F.cross_entropy(
+                        loss_ce = F.cross_entropy(
                             predictions, label,
-                            **ce_kwargs)                         
+                            **ce_kwargs)
+                        epoch_loss_ce += loss_ce.detach().item()
+                        loss += loss_ce
+            
+                        if pred_loc is not None:
+                            loss_loc = F.l1_loss(pred_loc, batch['xy'].to(self.device).float(), reduction='sum')                         
+                            loss += loss_loc
+                            epoch_loss_loc += loss_loc.detach().item()
                         
                     if 'labelD' in batch.keys():
                         lossD = F.mse_loss(predD, labelD, reduction = 'none')
@@ -332,10 +358,15 @@ class TDEEDModel(BaseRGBModel):
                         backward_only=(batch_idx + 1) % acc_grad_iter != 0)
 
                 epoch_loss += loss.detach().item()
+
                 if 'labelD' in batch.keys():
                     epoch_lossD += lossD.detach().item()
 
-        return epoch_loss / len(loader)     # Avg loss
+        ret =  {'loss': epoch_loss / len(loader), 'loss_ce': epoch_loss_ce / len(loader)}
+        ret['ce'] = epoch_loss_ce / len(loader)
+        ret['lossD'] = epoch_lossD / len(loader)
+        ret['loss_loc'] = epoch_loss_loc / len(loader)
+        return ret
 
     def predict(self, seq, use_amp=True, augment_inference = False):
         
