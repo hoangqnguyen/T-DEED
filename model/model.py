@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 
 #Local imports
-from model.modules import BaseRGBModel, EDSGPMIXERLayers, FCLayers, step, process_prediction
+from model.modules import BaseRGBModel, EDSGPMIXERLayers, FCLayers, step, process_prediction, MultiHeadMultiLayerMamba
 from model.shift import make_temporal_shift
 
 
@@ -108,6 +108,21 @@ class TDEEDModel(BaseRGBModel):
                     d_conv=4,    # Local convolution width
                     expand=2,    # Block expansion factor
                 ).to("cuda")
+
+                
+            elif self._temp_arch == 'mamba_multi':
+                from mamba_ssm import Mamba
+                
+                self.temp_enc = nn.Identity()
+                
+                self._temp_fine = MultiHeadMultiLayerMamba(
+                    dim=self._feat_dim, 
+                    num_heads=4, 
+                    num_layers=3, 
+                    d_state=16, 
+                    d_conv=4, 
+                    expand=2
+                )
 
             else:
                 raise NotImplementedError(self._temp_arch)
@@ -342,10 +357,10 @@ class TDEEDModel(BaseRGBModel):
                         epoch_loss_ce += loss_ce.detach().item()
                         loss += loss_ce
             
-                        if pred_loc is not None:
-                            loss_loc = F.l1_loss(pred_loc, batch['xy'].to(self.device).float(), reduction='sum')                         
-                            loss += loss_loc
-                            epoch_loss_loc += loss_loc.detach().item()
+                    if pred_loc is not None:
+                        loss_loc = F.l1_loss(pred_loc, batch['xy'].to(self.device).float(), reduction='mean')                         
+                        loss += 10 * loss_loc
+                        epoch_loss_loc += loss_loc.detach().item()
                         
                     if 'labelD' in batch.keys():
                         lossD = F.mse_loss(predD, labelD, reduction = 'none')

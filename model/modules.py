@@ -363,6 +363,48 @@ class LayerNorm(nn.Module):
         return out
     
 
+
+from mamba_ssm import Mamba
+
+class MultiHeadMultiLayerMamba(nn.Module):
+    def __init__(self, dim, num_heads, num_layers, d_state, d_conv, expand):
+        super(MultiHeadMultiLayerMamba, self).__init__()
+        assert dim % num_heads == 0, "dim must be divisible by num_heads"
+        
+        self.num_heads = num_heads
+        self.dim_per_head = dim // num_heads
+        self.layers = nn.ModuleList([
+            nn.ModuleList([
+                Mamba(
+                    d_model=self.dim_per_head,  # Model dimension for each head
+                    d_state=d_state,            # SSM state expansion factor
+                    d_conv=d_conv,              # Local convolution width
+                    expand=expand               # Block expansion factor
+                ) for _ in range(num_heads)
+            ]) for _ in range(num_layers)
+        ])
+
+    def forward(self, x):
+        batch, length, dim = x.shape
+        
+        # Split the input across the number of heads
+        x = x.view(batch, length, self.num_heads, self.dim_per_head)
+        x = x.permute(2, 0, 1, 3)  # (num_heads, batch, length, dim_per_head)
+        
+        # Apply multiple layers with multiple heads
+        for layer in self.layers:
+            head_outputs = []
+            for head in range(self.num_heads):
+                head_output = layer[head](x[head])
+                head_outputs.append(head_output)
+            x = torch.stack(head_outputs, dim=0)
+        
+        # Merge heads back
+        x = x.permute(1, 2, 0, 3).contiguous()
+        x = x.view(batch, length, dim)
+        
+        return x
+
 class FCLayers(nn.Module):
 
     def __init__(self, feat_dim, num_classes):

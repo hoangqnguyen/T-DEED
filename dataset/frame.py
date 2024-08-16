@@ -111,18 +111,25 @@ class ActionSpotDataset(Dataset):
                         if (label_idx >= -self._radi_displacement and label_idx < self._clip_len + self._radi_displacement):
                             label = self._class_dict[event['label']]
                             for i in range(max(0, label_idx - self._radi_displacement), min(self._clip_len, label_idx + self._radi_displacement + 1)):
-                                labels.append({'label': label, 'label_idx': i})
-                                labelsD.append({'displ': i - label_idx, 'label_idx': i})
+                                if 'xy' in event.keys():
+                                    labels.append({'label': label, 'label_idx': i, 'xy': event['xy']})
+                                    labelsD.append({'displ': i - label_idx, 'label_idx': i, 'xy': event['xy']})
+                                else:
+                                    labels.append({'label': label, 'label_idx': i})
+                                    labelsD.append({'displ': i - label_idx, 'label_idx': i})
                     else:
                         if (label_idx >= -self._dilate_len and label_idx < self._clip_len + self._dilate_len):
                             label = self._class_dict[event['label']]
                             for i in range(max(0, label_idx - self._dilate_len), min(self._clip_len, label_idx + self._dilate_len + 1)):
-                                labels.append({'label': label, 'label_idx': i})
+                                if 'xy' in event.keys():
+                                    labels.append({'label': label, 'label_idx': i, 'xy': event['xy']})
+                                else:
+                                    labels.append({'label': label, 'label_idx': i})
                     
-                    # load positions for kovo dataset
-                    if 'kovo' in self._dataset and len(labels) > 0:
-                        xy = event['xy']
-                        labels[-1]['xy'] = xy
+                    # # load positions for kovo dataset
+                    # if 'kovo' in self._dataset and len(labels) > 0:
+                    #     xy = event['xy']
+                    #     labels[-1]['xy'] = xy
 
                 self._frame_paths.append(frames_paths)
                 self._labels_store.append(labels)
