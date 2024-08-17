@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 
 #Local imports
-from model.modules import BaseRGBModel, EDSGPMIXERLayers, FCLayers, step, process_prediction, MultiHeadMultiLayerMamba
+from model.modules import BaseRGBModel, EDSGPMIXERLayers, FCLayers, step, process_prediction, MambaBlock
 from model.shift import make_temporal_shift
 
 
@@ -113,16 +113,13 @@ class TDEEDModel(BaseRGBModel):
             elif self._temp_arch == 'mamba_multi':
                 from mamba_ssm import Mamba
                 
-                self.temp_enc = nn.Identity()
+                # self.temp_enc = nn.Identity()
+                self.temp_enc = nn.Parameter(torch.normal(mean = 0, std = 1 / args.clip_len, size = (args.clip_len, self._d)))
                 
-                self._temp_fine = MultiHeadMultiLayerMamba(
-                    dim=self._feat_dim, 
-                    num_heads=4, 
-                    num_layers=3, 
-                    d_state=16, 
-                    d_conv=4, 
-                    expand=2
-                )
+                self._temp_fine = nn.Sequential(*[MambaBlock(
+                    dim=self._feat_dim,
+
+                ) for _ in range(3)])
 
             else:
                 raise NotImplementedError(self._temp_arch)
@@ -194,7 +191,7 @@ class TDEEDModel(BaseRGBModel):
                 x.view(-1, channels, height, width)
             ).reshape(batch_size, clip_len, self._d)
 
-            if self._temp_arch == 'ed_sgp_mixer':
+            if self._temp_arch == 'ed_sgp_mixer' or 'mamba_multi' in self._temp_arch:
                 im_feat = im_feat + self.temp_enc.expand(batch_size, -1, -1)
 
             elif '_dec_' not in self._temp_arch:
@@ -293,7 +290,8 @@ class TDEEDModel(BaseRGBModel):
         epoch_loss_loc = 0.
 
         with torch.no_grad() if optimizer is None else nullcontext():
-            for batch_idx, batch in enumerate(tqdm(loader)):
+            pbar = tqdm(loader)
+            for batch_idx, batch in enumerate(pbar):
                 frame = batch['frame'].to(self.device).float()
                 label = batch['label']
                 label = label.to(self.device)
@@ -376,6 +374,8 @@ class TDEEDModel(BaseRGBModel):
 
                 if 'labelD' in batch.keys():
                     epoch_lossD += lossD.detach().item()
+                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=1.0)
+                pbar.set_postfix({"loss": epoch_loss / (batch_idx + 1)})
 
         ret =  {'loss': epoch_loss / len(loader), 'loss_ce': epoch_loss_ce / len(loader)}
         ret['ce'] = epoch_loss_ce / len(loader)
