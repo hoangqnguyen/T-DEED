@@ -16,7 +16,7 @@ from util.score import compute_mAPs
 from util.io import store_json
 
 #Constants
-TOLERANCES = [1, 2, 4]
+TOLERANCES = [0, 1, 2, 4]
 WINDOWS = [1, 3]
 INFERENCE_BATCH_SIZE = 4
 

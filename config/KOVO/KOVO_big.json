@@ -4,7 +4,7 @@
     "store_dir": "logs/KOVO_big",
     "store_mode": "store",
     "batch_size": 8,
-    "clip_len": 100,
+    "clip_len": 60,
     "crop_dim": 224,
     "dataset": "kovo_288p",
     "radi_displacement": 1,
@@ -23,5 +23,5 @@
     "sgp_r": 2,
     "only_test": false,
     "criterion": "map",
-    "num_workers": 16
+    "num_workers": 4
 }

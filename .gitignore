@@ -10,3 +10,5 @@ checkpoints
 logs/*
 visualize.ipynb
 diagnose.ipynb
+pyrightconfig.json
+test_arch.ipynb

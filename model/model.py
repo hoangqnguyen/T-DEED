@@ -361,6 +361,7 @@ class TDEEDModel(BaseRGBModel):
                         epoch_loss_loc += loss_loc.detach().item()
                         
                     if 'labelD' in batch.keys():
+                        # print(f"predD: {predD.shape}, labelD: {labelD.shape}")
                         lossD = F.mse_loss(predD, labelD, reduction = 'none')
                         lossD = (lossD).mean()
                         loss = loss + lossD
