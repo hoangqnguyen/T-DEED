@@ -32,7 +32,7 @@ class TFSpotModel(BaseRGBModel):
         self.device = device
         # self._model = MambaSpotModel.Impl(args=args)
 
-        self._model = transformer_core.mambaspotcore_small(
+        self._model = transformer_core.model_default(
             args, num_classes=args.num_classes, num_frames=args.clip_len)
 
         self.P = 14 # TODO: set it as 14 first, paramterize later

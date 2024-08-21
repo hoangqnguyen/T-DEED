@@ -424,3 +424,19 @@ def process_prediction(pred, predD):
 
             aux_pred[b, max(0, min(pred.shape[1]-1, t - displ))] = torch.maximum(aux_pred[b, max(0, min(pred.shape[1]-1, t - displ))], pred[b, t])
     return aux_pred
+
+class MLP(nn.Module):
+
+    def __init__(self, n_embd, dropout=.1):
+        super().__init__()
+        self.c_fc    = nn.Linear(n_embd, 4 * n_embd)
+        self.gelu    = nn.GELU()
+        self.c_proj  = nn.Linear(4 * n_embd, n_embd)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        x = self.c_fc(x)
+        x = self.gelu(x)
+        x = self.c_proj(x)
+        x = self.dropout(x)
+        return x

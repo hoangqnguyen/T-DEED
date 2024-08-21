@@ -105,14 +105,14 @@ class TransformerSpotCore(nn.Module):
             channels=3, 
             num_classes=1000,
             # tf settings
-            num_dec=4, 
+            depth=4, 
             nhead=8, dim_ffd=512,
             drop_rate=0.,
             drop_path_rate=0.1,
             # video
             kernel_size=1, 
             num_frames=8, 
-            fc_drop_rate=0., 
+            fc_drop_rate=0.1, 
             device=None,
             dtype=None,
             # checkpoint
@@ -151,23 +151,32 @@ class TransformerSpotCore(nn.Module):
         self.head_drop = nn.Dropout(fc_drop_rate) if fc_drop_rate > 0 else nn.Identity()
 
         # prediction heads
-        self.head_cls = nn.Linear(self.num_features, num_classes+1)
+        from model.modules import FCLayers, MLP
+
+        self.head_cls = nn.Sequential(
+            MLP(self.num_features, fc_drop_rate),
+            FCLayers(self.num_features, num_classes+1),
+        )
+
         if self._radi_displacement > 0:
             self.head_displ = nn.Linear(self.num_features, 1)
-            self.head_displ.apply(segm_init_weights)
+            # self.head_displ.apply(segm_init_weights)
 
         if args.predict_location:
             self.head_location = nn.Conv2d(in_channels=embed_dim, out_channels=3, kernel_size=1, stride=1, padding='same') # ('has_event_in_that_patch, x , y) = 3 = out_channels
             self.head_location.apply(init_weights_conv2d)
 
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, num_dec)]  # stochastic depth decay rule
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         inter_dpr = [0.0] + dpr
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
         # mamba blocks
-        self.temp_arch = nn.TransformerDecoder(
-            decoder_layer=nn.TransformerDecoderLayer(
-                d_model=embed_dim, nhead=nhead, dim_feedforward=dim_ffd, dropout=drop_rate, batch_first=True),
-                num_layers=num_dec
+        # self.temp_arch = nn.TransformerDecoder(
+        #     decoder_layer=nn.TransformerDecoderLayer(
+        #         d_model=embed_dim, nhead=nhead, dim_feedforward=dim_ffd, dropout=drop_rate, batch_first=True),
+        #         num_layers=num_dec
+        # )
+        self.temp_arch = nn.Transformer(
+            d_model=embed_dim, nhead=nhead, num_encoder_layers=depth, num_decoder_layers=depth, dim_feedforward=dim_ffd, dropout=drop_rate, batch_first=True
         )
         
         # output head
@@ -280,7 +289,8 @@ class TransformerSpotCore(nn.Module):
         cls_query = self.cls_query.expand(B, -1, -1)
         
         # breakpoint()
-        hidden_states = self.temp_arch(cls_query, x)
+        # hidden_states = self.temp_arch(cls_query, x)
+        hidden_states = self.temp_arch(x, cls_query)
 
 
         # return only cls token
@@ -348,74 +358,21 @@ def load_state_dict(model, state_dict, center=True):
     print(msg)
 
 
-
 @register_model
-def mambaspotcore_nano(args, pretrained=False, **kwargs):
+def model_default(args, pretrained=False, **kwargs):
     model = TransformerSpotCore(
         args=args,
         patch_size=16, 
-        embed_dim=192, 
-        num_dec=3, 
-        dim_ffd=512,
-        **kwargs
-    )
-    model.default_cfg = _cfg()
-    if pretrained:
-        print('load pretrained weights')
-        state_dict = torch.load(_MODELS["videomamba_t16_in1k"], map_location='cpu')
-        load_state_dict(model, state_dict, center=True)
-    return model
-
-@register_model
-def mambaspotcore_tiny(args, pretrained=False, **kwargs):
-    model = TransformerSpotCore(
-        args=args,
-        patch_size=16, 
-        embed_dim=192, 
-        num_dec=6, 
-        dim_ffd=512,
-        **kwargs
-    )
-    model.default_cfg = _cfg()
-    if pretrained:
-        print('load pretrained weights')
-        state_dict = torch.load(_MODELS["videomamba_t16_in1k"], map_location='cpu')
-        load_state_dict(model, state_dict, center=True)
-    return model
-
-
-@register_model
-def mambaspotcore_small(args, pretrained=False, **kwargs):
-    model = TransformerSpotCore(
-        args=args,
-        patch_size=16, 
-        embed_dim=384, 
-        num_dec=9, 
-        dim_ffd=512,
+        nhead=8,
+        embed_dim=512, 
+        depth=6, 
+        dim_ffd=2048,
         **kwargs
     )
     model.default_cfg = _cfg()
     if pretrained:
         print('load pretrained weights')
         state_dict = torch.load(_MODELS["videomamba_s16_in1k"], map_location='cpu')
-        load_state_dict(model, state_dict, center=True)
-    return model
-
-
-@register_model
-def mambaspotcore_middle(args, pretrained=False, **kwargs):
-    model = TransformerSpotCore(
-        args=args,
-        patch_size=16, 
-        embed_dim=576, 
-        num_dec=12, 
-        dim_ffd=512,
-        **kwargs
-    )
-    model.default_cfg = _cfg()
-    if pretrained:
-        print('load pretrained weights')
-        state_dict = torch.load(_MODELS["videomamba_m16_in1k"], map_location='cpu')
         load_state_dict(model, state_dict, center=True)
     return model
 
@@ -442,7 +399,7 @@ if __name__ == '__main__':
     img_size = 224
 
     # To evaluate GFLOPs, pleaset set `rms_norm=False` and `fused_add_norm=False`
-    model = mambaspotcore_middle(args=args, num_frames=num_frames, num_classes=6).cuda()
+    model = model_default(args=args, num_frames=num_frames, num_classes=6).cuda()
     batch = torch.rand(4, num_frames, 3, img_size, img_size).cuda()
     output, y = model(batch)
     for k, v in output.items():
