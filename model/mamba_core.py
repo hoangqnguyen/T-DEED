@@ -37,6 +37,9 @@ _MODELS = {
     "videomamba_m16_in1k": os.path.join(MODEL_PATH, "videomamba_m16_in1k_res224.pth"),
 }
 
+def stablize(*args):
+    for x in args:
+        yield torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0) if x is not None else None
 
 class Block(nn.Module):
     def __init__(
@@ -78,32 +81,18 @@ class Block(nn.Module):
             residual: hidden_states = Mixer(LN(residual))
         """
         # clamping for numerical stability
-        if residual is not None:
-            residual = torch.clamp(residual, min=-1e6, max=1e6)
-            # residual = torch.nan_to_num(residual, nan=0.0, posinf=1e6, neginf=-1e6)
-        hidden_states = torch.clamp(hidden_states, min=-1e6, max=1e6)
-        # hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
-
-        if isnan(hidden_states):
-            print(f'Block: input hidden_states is NaN')
-            breakpoint()
-
-            
-        if residual is not None and isnan(residual):    
-            print(f'Block: input residual is NaN')
-            breakpoint()
+        hidden_states, residual = stablize(hidden_states, residual)
 
         if not self.fused_add_norm:
             residual = (residual + self.drop_path(hidden_states)) if residual is not None else hidden_states
+            
+            residual = stablize(residual)
 
             hidden_states = self.norm(residual.to(dtype=self.norm.weight.dtype)) 
-            # residual = residual 
             if self.residual_in_fp32:
                 residual = residual.to(torch.float32)
-            
-            if residual is not None:
-                residual = torch.clamp(residual, min=-1e6, max=1e6)
-            hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
+
+            hidden_states = stablize(hidden_states)
 
             if isnan(hidden_states):
                 print(f'not self.fused_add_norm:  hidden_states is NaN')
@@ -125,17 +114,11 @@ class Block(nn.Module):
                 residual_in_fp32=self.residual_in_fp32,
                 eps=self.norm.eps,
             )
-
-            # hidden_states = hidden_states 
-            # residual = residual 
-            if residual is not None:
-                residual = torch.clamp(residual, min=-1e6, max=1e6)
-            hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
+            hidden_states, residual = stablize(hidden_states, residual)
 
             if isnan(hidden_states):
                 print(f'yes self.fused_add_norm:  hidden_states is NaN')
                 breakpoint()
-
                 
             if residual is not None and isnan(residual):
                 print(f'yes self.fused_add_norm:  residual is NaN')
@@ -144,25 +127,19 @@ class Block(nn.Module):
             hidden_states = checkpoint.checkpoint(self.mixer, hidden_states, inference_params)
         else:
             
-            if isnan(hidden_states):
-                print(f'before mixer:  hidden_states is NaN')
-                breakpoint()
+            hidden_states, residual = stablize(hidden_states, residual)
 
             if residual is not None:
                 residual = torch.clamp(residual, min=-1e6, max=1e6)
             hidden_states = self.mixer(hidden_states, inference_params=inference_params)
-            # hidden_states = torch.clamp(hidden_states, min=-1e6, max=1e6)
-            hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
+
+            hidden_states = stablize(hidden_states)
 
             if isnan(hidden_states):
                 print(f'after mixer:  hidden_states is NaN')
                 breakpoint()
 
-        if residual is not None:
-            residual = torch.clamp(residual, min=-1e6, max=1e6)
-        hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
-
-        return hidden_states, residual
+        return stablize(hidden_states, residual)
 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
         return self.mixer.allocate_inference_cache(batch_size, max_seqlen, dtype=dtype, **kwargs)
