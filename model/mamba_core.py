@@ -38,8 +38,10 @@ _MODELS = {
 }
 
 def stablize(*args):
-    for x in args:
-        yield torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0) if x is not None else None
+    results = [torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0) if x is not None else None for x in args]
+    if len(results) == 1:
+        return results[0]
+    return results
 
 class Block(nn.Module):
     def __init__(
@@ -131,6 +133,7 @@ class Block(nn.Module):
 
             if residual is not None:
                 residual = torch.clamp(residual, min=-1e6, max=1e6)
+
             hidden_states = self.mixer(hidden_states, inference_params=inference_params)
 
             hidden_states = stablize(hidden_states)
