@@ -57,7 +57,7 @@ class Block(nn.Module):
         super().__init__()
         self.residual_in_fp32 = residual_in_fp32
         self.fused_add_norm = fused_add_norm
-        print(f'fused_add_norm: {fused_add_norm}')
+        # print(f'fused_add_norm: {fused_add_norm}')
         self.mixer = mixer_cls(dim)
         self.norm = norm_cls(dim)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
@@ -80,7 +80,9 @@ class Block(nn.Module):
         # clamping for numerical stability
         if residual is not None:
             residual = torch.clamp(residual, min=-1e6, max=1e6)
+            # residual = torch.nan_to_num(residual, nan=0.0, posinf=1e6, neginf=-1e6)
         hidden_states = torch.clamp(hidden_states, min=-1e6, max=1e6)
+        # hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
 
         if isnan(hidden_states):
             print(f'Block: input hidden_states is NaN')
@@ -140,10 +142,13 @@ class Block(nn.Module):
                 breakpoint()
 
             hidden_states = self.mixer(hidden_states, inference_params=inference_params)
+            # hidden_states = torch.clamp(hidden_states, min=-1e6, max=1e6)
+            hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
 
             if isnan(hidden_states):
                 print(f'after mixer:  hidden_states is NaN')
                 breakpoint()
+
         return hidden_states, residual
 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
