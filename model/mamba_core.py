@@ -153,6 +153,10 @@ class Block(nn.Module):
                 print(f'after mixer:  hidden_states is NaN')
                 breakpoint()
 
+        if residual is not None:
+            residual = torch.clamp(residual, min=-1e6, max=1e6)
+        hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
+        
         return hidden_states, residual
 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
