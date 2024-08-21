@@ -33,7 +33,7 @@ class MambaSpotModel(BaseRGBModel):
 
         self._model = mamba_core.mambaspotcore_nano(
             args, num_classes=args.num_classes, num_frames=args.clip_len,
-            fused_add_norm=False)
+            fused_add_norm=True)
 
         self.P = 14 # TODO: set it as 14 first, paramterize later
 

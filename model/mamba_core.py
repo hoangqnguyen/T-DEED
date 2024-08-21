@@ -100,7 +100,11 @@ class Block(nn.Module):
             # residual = residual 
             if self.residual_in_fp32:
                 residual = residual.to(torch.float32)
-                
+            
+            if residual is not None:
+                residual = torch.clamp(residual, min=-1e6, max=1e6)
+            hidden_states = torch.nan_to_num(hidden_states, nan=0.0, posinf=1e6, neginf=-1e6)
+
             if isnan(hidden_states):
                 print(f'not self.fused_add_norm:  hidden_states is NaN')
                 breakpoint()
