@@ -57,6 +57,7 @@ class Block(nn.Module):
         super().__init__()
         self.residual_in_fp32 = residual_in_fp32
         self.fused_add_norm = fused_add_norm
+        print(f'fused_add_norm: {fused_add_norm}')
         self.mixer = mixer_cls(dim)
         self.norm = norm_cls(dim)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
@@ -76,19 +77,25 @@ class Block(nn.Module):
             hidden_states: the sequence to the encoder layer (required).
             residual: hidden_states = Mixer(LN(residual))
         """
-        
+        # clamping for numerical stability
+        if residual is not None:
+            residual = torch.clamp(residual, min=-1e6, max=1e6)
+        hidden_states = torch.clamp(hidden_states, min=-1e6, max=1e6)
+
         if isnan(hidden_states):
             print(f'Block: input hidden_states is NaN')
             breakpoint()
 
             
-        if residual is not None and isnan(residual):
+        if residual is not None and isnan(residual):    
             print(f'Block: input residual is NaN')
             breakpoint()
 
         if not self.fused_add_norm:
             residual = (residual + self.drop_path(hidden_states)) if residual is not None else hidden_states
-            hidden_states = self.norm(residual.to(dtype=self.norm.weight.dtype))
+
+            hidden_states = self.norm(residual.to(dtype=self.norm.weight.dtype)) 
+            # residual = residual 
             if self.residual_in_fp32:
                 residual = residual.to(torch.float32)
                 
@@ -101,8 +108,8 @@ class Block(nn.Module):
                 print(f'not self.fused_add_norm:  residual is NaN')
                 breakpoint()
         else:
-            # fused_add_norm_fn = rms_norm_fn if isinstance(self.norm, RMSNorm) else layer_norm_fn
-            fused_add_norm_fn = layer_norm_fn
+            fused_add_norm_fn = rms_norm_fn if isinstance(self.norm, RMSNorm) else layer_norm_fn
+            # fused_add_norm_fn = layer_norm_fn
             hidden_states, residual = fused_add_norm_fn(
                 hidden_states if residual is None else self.drop_path(hidden_states),
                 self.norm.weight,
@@ -112,6 +119,9 @@ class Block(nn.Module):
                 residual_in_fp32=self.residual_in_fp32,
                 eps=self.norm.eps,
             )
+
+            # hidden_states = hidden_states 
+            # residual = residual 
 
             if isnan(hidden_states):
                 print(f'yes self.fused_add_norm:  hidden_states is NaN')
@@ -145,7 +155,7 @@ def create_block(
     ssm_cfg=None,
     norm_epsilon=1e-5,
     drop_path=0.,
-    rms_norm=True,
+    rms_norm=False,
     residual_in_fp32=True,
     fused_add_norm=True,
     layer_idx=None,
@@ -259,7 +269,7 @@ class MambaSpotCore(nn.Module):
             norm_epsilon=1e-5, 
             initializer_cfg=None,
             fused_add_norm=True,
-            rms_norm=True, 
+            rms_norm=False, 
             residual_in_fp32=True,
             bimamba=True,
             # video
@@ -295,6 +305,9 @@ class MambaSpotCore(nn.Module):
 
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
         self.cls_token = nn.Parameter(torch.zeros(1, num_frames, self.embed_dim)) # TODO: test cls token for each frame
+
+        # self.cls_token = nn.Parameter(torch.sin(torch.arange(num_frames).unsqueeze(1) * torch.arange(self.embed_dim).unsqueeze(0) / 10000.0).unsqueeze(0)) # TODO: Test init as Sinusoidal
+
 
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, self.embed_dim))
         self.temporal_pos_embedding = nn.Parameter(torch.zeros(1, num_frames // kernel_size, embed_dim))
