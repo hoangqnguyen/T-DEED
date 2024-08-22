@@ -145,14 +145,18 @@ class TDEEDModel(BaseRGBModel):
                 from mamba_ssm import Mamba
 
                 self.temp_enc = nn.Identity()
+                self._temp_fine = MambaBlock(
+                    dim=self._feat_dim,
+                    dropout=0.25,
+                )
 
-                self._temp_fine = Mamba(
-                    # This module uses roughly 3 * expand * d_model^2 parameters
-                    d_model=self._feat_dim,  # Model dimension d_model
-                    d_state=16,  # SSM state expansion factor
-                    d_conv=4,  # Local convolution width
-                    expand=2,  # Block expansion factor
-                ).to("cuda")
+                # self._temp_fine = Mamba(
+                #     # This module uses roughly 3 * expand * d_model^2 parameters
+                #     d_model=self._feat_dim,  # Model dimension d_model
+                #     d_state=16,  # SSM state expansion factor
+                #     d_conv=4,  # Local convolution width
+                #     expand=2,  # Block expansion factor
+                # ).to("cuda")
 
             elif self._temp_arch == "mamba_multi":
                 from mamba_ssm import Mamba
@@ -469,8 +473,8 @@ class TDEEDModel(BaseRGBModel):
                     for i in range(pred.shape[0]):
                         predictions = pred[i].reshape(-1, self._num_classes)
                         loss_ce = F.cross_entropy(predictions, label, **ce_kwargs)
-                        epoch_loss_ce += loss_ce.detach().item()
                         loss += loss_ce
+                        epoch_loss_ce += loss_ce.detach().item()
 
                     if pred_loc is not None:
                         from util.det import convert_target_to_prediction_shape
@@ -485,7 +489,7 @@ class TDEEDModel(BaseRGBModel):
                             target_xy.to(self.device).reshape(-1, 3).float(),
                             reduction="mean",
                         )
-                        loss +=5 *  loss_loc
+                        loss += 5 * loss_loc
                         epoch_loss_loc += loss_loc.detach().item()
 
                     if "labelD" in batch.keys():

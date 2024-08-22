@@ -1,8 +1,8 @@
 {
     "frame_dir": "data/kovo_288p/frames",
-    "save_dir": "logs/KOVOTEEDL_big",
-    "store_dir": "logs/KOVOTEEDL_big",
-    "store_mode": "store",
+    "save_dir": "logs/KOVOTEEDL_small",
+    "store_dir": "logs/KOVOTEEDL_small",
+    "store_mode": "load",
     "batch_size": 4,
     "clip_len": 60,
     "crop_dim": -1,

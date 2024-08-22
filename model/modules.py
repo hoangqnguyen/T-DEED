@@ -368,35 +368,45 @@ from mamba_ssm import Mamba
 
 
 class MambaBlock(nn.Module):
-    def __init__(self, dim, d_state=16, d_conv=4, expand=2):
+    def __init__(self, dim, d_state=16, d_conv=4, expand=2, dropout=0.1):
         super(MambaBlock, self).__init__()
         self.ln_1 = nn.LayerNorm(dim)
         self.mamba = Mamba(
             d_model=dim, # Model dimension d_model
             d_state=d_state,  # SSM state expansion factor
             d_conv=d_conv,    # Local convolution width
-            expand=expand,    # Block expansion factor)
+            expand=expand,    # Block expansion factor
         )
+        self.dropout_1 = nn.Dropout(dropout)  # Dropout layer after Mamba
         self.mlp = nn.Identity()
+        self.dropout_2 = nn.Dropout(dropout)  # Dropout layer after MLP
         self.ln_2 = nn.LayerNorm(dim)
 
     def forward(self, x):
-        x = x + self.mamba(self.ln_1(x))
-        x = x + self.mlp(self.ln_2(x))        
+        x = x + self.dropout_1(self.mamba(self.ln_1(x)))
+        x = x + self.dropout_2(self.mlp(self.ln_2(x)))
         return x
 
 
-class FCLayers(nn.Module):
 
-    def __init__(self, feat_dim, num_classes):
+class FCLayers(nn.Module):
+    def __init__(self, feat_dim, num_classes, dropout_rate=0.5, weight_decay=1e-4):
         super().__init__()
-        self._fc_out = nn.Linear(feat_dim, num_classes)
-        self.dropout = nn.Dropout()
+        self._fc1 = nn.Linear(feat_dim, feat_dim // 2)  # Reduce complexity
+        self._bn1 = nn.BatchNorm1d(feat_dim // 2)  # Add batch normalization
+        self._fc_out = nn.Linear(feat_dim // 2, num_classes)
+        self.dropout = nn.Dropout(p=dropout_rate)  # Increase dropout rate
+        self.weight_decay = weight_decay
 
     def forward(self, x):
         batch_size, clip_len, _ = x.shape
-        return self._fc_out(self.dropout(x).reshape(batch_size * clip_len, -1)).view(
-            batch_size, clip_len, -1)
+        x = x.reshape(batch_size * clip_len, -1)
+        x = self._fc1(x)
+        x = self._bn1(x)
+        x = self.dropout(x)
+        x = self._fc_out(x)
+        return x.view(batch_size, clip_len, -1)
+
     
 
 def step(optimizer, scaler, loss, lr_scheduler=None, backward_only=False):
@@ -440,3 +450,4 @@ class MLP(nn.Module):
         x = self.c_proj(x)
         x = self.dropout(x)
         return x
+    
