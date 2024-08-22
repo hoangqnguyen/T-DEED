@@ -489,7 +489,7 @@ class TDEEDModel(BaseRGBModel):
                             target_xy.to(self.device).reshape(-1, 3).float(),
                             reduction="mean",
                         )
-                        loss += 5 * loss_loc
+                        loss += loss_loc
                         epoch_loss_loc += loss_loc.detach().item()
 
                     if "labelD" in batch.keys():
