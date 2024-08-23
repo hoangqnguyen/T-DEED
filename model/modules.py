@@ -434,6 +434,27 @@ def step(optimizer, scaler, loss, lr_scheduler=None, backward_only=False):
             lr_scheduler.step()
         optimizer.zero_grad()
 
+
+class CustomPredLoc(nn.Module):
+    def __init__(self, in_channels, out_channels=3):
+        super(CustomPredLoc, self).__init__()
+        self.conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+        # self.sigmoid = nn.Sigmoid()  # For objectness
+        self.tanh = nn.Tanh()        # For displacement
+    
+    def forward(self, x):
+        x = self.conv(x)
+        # objectness = self.sigmoid(x[:, 0:1, :, :])  # Apply Sigmoid to the first channel
+        objectness = x[:, 0:1, :, :]  # Apply Sigmoid to the first channel
+        displacement = self.tanh(x[:, 1:, :, :])    # Apply Tanh to the other two channels
+        return torch.cat([objectness, displacement], dim=1)
+
 def process_prediction(pred, predD):
     pred = torch.softmax(pred, axis=2)
     aux_pred = torch.zeros_like(pred)

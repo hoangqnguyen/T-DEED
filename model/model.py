@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 
 #Local imports
-from model.modules import BaseRGBModel, EDSGPMIXERLayers, FCLayers, step, process_prediction, MultiHeadMultiLayerMamba
+from model.modules import BaseRGBModel, EDSGPMIXERLayers, FCLayers, step, process_prediction, MultiHeadMultiLayerMamba, CustomPredLoc
 from model.shift import make_temporal_shift
 
 
@@ -148,13 +148,14 @@ class TDEEDModel(BaseRGBModel):
 
             if args.predict_location:
                 # self._pred_loc = FCLayers(self._feat_dim, 2)
-                self._pred_loc = nn.Conv2d(
-                    in_channels=self._pos_c,
-                    out_channels=3,
-                    kernel_size=1,
-                    stride=1,
-                    padding="same",
-                )
+                # self._pred_loc = nn.Conv2d(
+                #     in_channels=self._pos_c,
+                #     out_channels=3,
+                #     kernel_size=1,
+                #     stride=1,
+                #     padding="same",
+                # )
+                self._pred_loc = CustomPredLoc(in_channels=self._pos_c, out_channels=3)
             
             if self._radi_displacement > 0:
                 self._pred_displ = FCLayers(self._feat_dim, 1)
@@ -225,7 +226,7 @@ class TDEEDModel(BaseRGBModel):
 
             if hasattr(self, "_pred_loc"):
                 cnn_ft = self.get_activation_map()
-                loc_feat = self._pred_loc(cnn_ft)
+                loc_feat = self._pred_loc(cnn_ft).permute(0, 2, 3 , 1)
             else:
                 loc_feat = None
 
@@ -386,23 +387,62 @@ class TDEEDModel(BaseRGBModel):
                         epoch_loss_ce += loss_ce.detach().item()
                         loss += loss_ce
             
+                    # if pred_loc is not None:
+                    #     from util.det import convert_target_to_prediction_shape
+
+                    #     target_xy = convert_target_to_prediction_shape(
+                    #         target=batch["xy"].float(), P=self._model._P
+                    #     )
+                    #     # print(f"pred_loc: {pred_loc.shape}, target_xy: {target_xy.shape}")
+
+                    #     loss_loc = F.l1_loss(
+                    #         pred_loc.reshape(-1, 3),
+                    #         target_xy.to(self.device).reshape(-1, 3).float(),
+                    #         reduction="mean",
+                    #     )
+                        
+                    #     loss += loss_loc
+                    #     # loss += 1e-2 * loss_loc
+                    #     epoch_loss_loc += loss_loc.detach().item()
                     if pred_loc is not None:
                         from util.det import convert_target_to_prediction_shape
 
+                        # Convert the target to match the shape of the prediction
                         target_xy = convert_target_to_prediction_shape(
                             target=batch["xy"].float(), P=self._model._P
                         )
                         # print(f"pred_loc: {pred_loc.shape}, target_xy: {target_xy.shape}")
+                        # breakpoint() 
 
-                        loss_loc = F.l1_loss(
-                            pred_loc.reshape(-1, 3),
-                            target_xy.to(self.device).reshape(-1, 3).float(),
-                            reduction="mean",
-                        )
+                        # Split the predictions and targets into objectness and displacement components
+                        pred_objectness = pred_loc[..., 0].flatten()
+                        pred_displacement = pred_loc[..., 1:].reshape(-1, 2)
                         
+                        target_objectness = target_xy[..., 0].flatten()
+                        target_displacement = target_xy[..., 1:].reshape(-1, 2)
+
+                        # print(pred_objectness.shape, target_objectness.shape)
+                        # Objectness Loss: Binary cross-entropy loss
+                        loss_objectness = F.binary_cross_entropy_with_logits(
+                            pred_objectness,
+                            target_objectness.to(self.device).float(),
+                            reduction="mean"
+                        )
+
+                        # Displacement Loss: L1 loss (or L2, depending on preference)
+                        loss_displacement = F.l1_loss(
+                            pred_displacement,
+                            target_displacement.to(self.device).float(),
+                            reduction="mean"
+                        )
+
+                        # Combine the losses with appropriate weighting
+                        loss_loc = loss_objectness + loss_displacement
+
+                        # Add to the overall loss
                         loss += loss_loc
-                        # loss += 1e-2 * loss_loc
                         epoch_loss_loc += loss_loc.detach().item()
+
                         
                     if 'labelD' in batch.keys():
                         lossD = F.mse_loss(predD, labelD, reduction = 'none')
