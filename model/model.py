@@ -63,6 +63,22 @@ class TDEEDModel(BaseRGBModel):
             self._feat_dim = self._d
             feat_dim = self._d
 
+            # CNN featrues hook
+            
+            self.__cnn_features = None
+
+            def get_feature_map():
+                def hook_fn(module, input, output):
+                    self.__cnn_features = output
+
+                return hook_fn
+
+            self.__hook = self._features.final_conv.register_forward_hook(
+                get_feature_map()
+            )
+            self._pos_c = 368
+            self._P = 7
+
             #Positional encoding
             
             if self._temp_arch == 'ed_sgp_mixer':
@@ -130,7 +146,14 @@ class TDEEDModel(BaseRGBModel):
             self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
 
             if args.predict_location:
-                self._pred_loc = FCLayers(self._feat_dim, 2)
+                # self._pred_loc = FCLayers(self._feat_dim, 2)
+                self._pred_loc = nn.Conv2d(
+                    in_channels=self._pos_c,
+                    out_channels=3,
+                    kernel_size=1,
+                    stride=1,
+                    padding="same",
+                )
             
             if self._radi_displacement > 0:
                 self._pred_displ = FCLayers(self._feat_dim, 1)
@@ -164,26 +187,31 @@ class TDEEDModel(BaseRGBModel):
                 self.cropT = torch.nn.Identity()
                 self.cropI = torch.nn.Identity()
 
+            self.img_size = 224  # TODO: parametrize this
+            self.resize = T.Resize((self.img_size, self.img_size), antialias=True)
+
+        def get_activation_map(self):
+            return self.__cnn_features
+
+        def remove_hook(self):
+            self.__hook.remove()
+
         def forward(self, x, y = None, inference=False, augment_inference=False):
 
+            B, T, C, _, _ = x.shape
+            
             x = self.normalize(x) #Normalize to 0-1
+            x = self.resize(x.flatten(0, 1)).view(B, T, C, self.img_size, self.img_size)
             batch_size, true_clip_len, channels, height, width = x.shape
             if not inference:
-                x.view(-1, channels, height, width)
-                if self.croping != None:
-                    height = self.croping
-                    width = self.croping
-                x = self.cropT(x) #same crop for all frames
+                x = x.view(-1, channels, height, width)
+
                 x = x.view(batch_size, true_clip_len, channels, height, width)
                 x = self.augment(x) #augmentation per-batch
                 x = self.standarize(x) #standarization imagenet stats
 
             else:
                 x = x.view(-1, channels, height, width)
-                if self.croping != None:
-                    height = self.croping
-                    width = self.croping
-                x = self.cropI(x) #same center crop for all frames
                 x = x.view(batch_size, true_clip_len, channels, height, width)
                 if augment_inference:
                     x = self.augmentI(x)
@@ -193,6 +221,12 @@ class TDEEDModel(BaseRGBModel):
             im_feat = self._features(
                 x.view(-1, channels, height, width)
             ).reshape(batch_size, clip_len, self._d)
+
+            if hasattr(self, "_pred_loc"):
+                cnn_ft = self.get_activation_map()
+                loc_feat = self._pred_loc(cnn_ft)
+            else:
+                loc_feat = None
 
             if self._temp_arch == 'ed_sgp_mixer':
                 im_feat = im_feat + self.temp_enc.expand(batch_size, -1, -1)
@@ -206,12 +240,6 @@ class TDEEDModel(BaseRGBModel):
                 im_feat = self._temp_fine(self._temp_queries.expand(batch_size, true_clip_len, -1), im_feat)
             else:
                 im_feat = self._temp_fine(im_feat)
-
-            if hasattr(self, '_pred_loc'):
-                loc_feat = self._pred_loc(im_feat).sigmoid()
-                # loc_feat = None
-            else:
-                loc_feat = None
                 
             if self._radi_displacement > 0:
                 displ_feat = self._pred_displ(im_feat).squeeze(-1)
@@ -358,8 +386,20 @@ class TDEEDModel(BaseRGBModel):
                         loss += loss_ce
             
                     if pred_loc is not None:
-                        loss_loc = F.l1_loss(pred_loc, batch['xy'].to(self.device).float(), reduction='mean')                         
-                        loss += 10 * loss_loc
+                        from util.det import convert_target_to_prediction_shape
+
+                        target_xy = convert_target_to_prediction_shape(
+                            target=batch["xy"].float(), P=self._model._P
+                        )
+                        # print(f"pred_loc: {pred_loc.shape}, target_xy: {target_xy.shape}")
+
+                        loss_loc = F.l1_loss(
+                            pred_loc.reshape(-1, 3),
+                            target_xy.to(self.device).reshape(-1, 3).float(),
+                            reduction="mean",
+                        )
+                        
+                        loss += loss_loc
                         epoch_loss_loc += loss_loc.detach().item()
                         
                     if 'labelD' in batch.keys():
