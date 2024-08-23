@@ -399,7 +399,7 @@ class TDEEDModel(BaseRGBModel):
                             reduction="mean",
                         )
                         
-                        loss += loss_loc
+                        loss += 1e-2 * loss_loc
                         epoch_loss_loc += loss_loc.detach().item()
                         
                     if 'labelD' in batch.keys():
