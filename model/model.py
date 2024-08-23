@@ -69,7 +69,8 @@ class TDEEDModel(BaseRGBModel):
 
             def get_feature_map():
                 def hook_fn(module, input, output):
-                    self.__cnn_features = output
+                    # self.__cnn_features = output # so overfit with temporal preds
+                    self.__cnn_features = output.detach()
 
                 return hook_fn
 
@@ -399,7 +400,8 @@ class TDEEDModel(BaseRGBModel):
                             reduction="mean",
                         )
                         
-                        loss += 1e-2 * loss_loc
+                        loss += loss_loc
+                        # loss += 1e-2 * loss_loc
                         epoch_loss_loc += loss_loc.detach().item()
                         
                     if 'labelD' in batch.keys():
