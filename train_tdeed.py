@@ -123,13 +123,19 @@ def main(args):
                 
     # Model
     model = TDEEDModel(args=args)
-    optimizer, scaler = model.get_optimizer({'lr': args.learning_rate})
+    optimizer_temporal, scaler_temporal = model.get_optimizer_temporal({'lr': args.learning_rate})
+    optimizer_spatial, scaler_spatial = model.get_optimizer_spatial({'lr': args.learning_rate})
 
+    # Training
     if not args.only_test:
         # Warmup schedule
         num_steps_per_epoch = len(train_loader) // args.acc_grad_iter
-        num_epochs, lr_scheduler = get_lr_scheduler(
-            args, optimizer, num_steps_per_epoch)
+
+        num_epochs, lr_scheduler_temporal = get_lr_scheduler(
+            args, optimizer_temporal, num_steps_per_epoch)
+        
+        _, lr_scheduler_spatial = get_lr_scheduler(
+            args, optimizer_spatial, num_steps_per_epoch)
         
         losses = []
         best_criterion = 0 if args.criterion == 'map' else float('inf')
@@ -140,8 +146,10 @@ def main(args):
 
             time_train0 = time.time()
             train_loss = model.epoch(
-                train_loader, optimizer, scaler,
-                lr_scheduler=lr_scheduler, acc_grad_iter=args.acc_grad_iter)
+                train_loader, 
+                optimizer_temporal, scaler_temporal, lr_scheduler_temporal, 
+                optimizer_spatial, scaler_spatial, lr_scheduler_spatial, 
+                acc_grad_iter=args.acc_grad_iter)
             time_train1 = time.time()
             time_train = time_train1 - time_train0
             
