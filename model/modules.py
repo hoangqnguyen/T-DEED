@@ -445,15 +445,23 @@ class CustomPredLoc(nn.Module):
             stride=1,
             padding=0,
         )
-        # self.sigmoid = nn.Sigmoid()  # For objectness
-        self.tanh = nn.Tanh()        # For displacement
-    
+        self.tanh = nn.Tanh()  # For displacement
+        
+        # Apply custom weight initialization
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        # Initialize the convolutional layer's weights
+        nn.init.kaiming_normal_(self.conv.weight, mode='fan_out', nonlinearity='relu')
+        if self.conv.bias is not None:
+            nn.init.constant_(self.conv.bias, 0)
+
     def forward(self, x):
         x = self.conv(x)
-        # objectness = self.sigmoid(x[:, 0:1, :, :])  # Apply Sigmoid to the first channel
-        objectness = x[:, 0:1, :, :]  # Apply Sigmoid to the first channel
-        displacement = self.tanh(x[:, 1:, :, :])    # Apply Tanh to the other two channels
+        objectness = x[:, 0:1, :, :]  # Use raw output for objectness
+        displacement = self.tanh(x[:, 1:, :, :])  # Apply Tanh to the other two channels
         return torch.cat([objectness, displacement], dim=1)
+
 
 def process_prediction(pred, predD):
     pred = torch.softmax(pred, axis=2)
