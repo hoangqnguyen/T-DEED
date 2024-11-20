@@ -810,7 +810,8 @@ class FrameReaderVideo:
                 )
 
             elif self._dataset == "imrcvolley":
-                frame_path = os.path.join(path, f"{frame_num:06d}.jpg")
+                frame_path = os.path.join(
+                    self._frame_dir, video_name, f"{frame_num:06d}.jpg")
 
             try:
                 img = self.read_frame(frame_path)

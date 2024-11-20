@@ -340,10 +340,9 @@ def main(args):
     model.load(
         torch.load(
             os.path.join(
-                os.getcwd(),
-                "checkpoints",
-                args.model.split("_")[0],
-                args.model,
+                args.save_dir,
+                # args.model.split("_")[0],
+                # args.model,
                 "checkpoint_best.pt",
             )
         )
