@@ -21,7 +21,7 @@ from util.score import compute_mAPs
 from util.io import store_json, store_json_sn, store_json_snb
 
 #Constants
-TOLERANCES = [1, 2, 4]
+TOLERANCES = [0, 1, 2, 4]
 WINDOWS = [1, 3]
 TOLERANCES_SN = [3, 6]
 WINDOWS_SN = [3, 6]
